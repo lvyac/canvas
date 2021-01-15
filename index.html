@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生成海报</title>
+    <style>
+        html,
+        body {
+            padding: 0;
+            margin: 0;
+            border: 0;
+        }
+        .modal{
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+        .modal .model-content{
+            margin: auto;
+            width: 80%;
+            height: 40px;
+            border-radius: 8px;
+            background-color: #fff;
+            line-height: 40px;
+            text-align: center;
+        }
+        .hidden{
+            display: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="modal" id="modal">
+        <div class="model-content">
+            正在加载远程背景图片
+        </div>
+    </div>
+    <script src="https://cdn.bootcdn.net/ajax/libs/axios/0.21.0/axios.min.js"></script>
+    <script>
+        
+        let bodyWdith = window.screen.width
+        let bodyHeight = window.screen.height
+        const ctx = document.getElementById('canvas');
+        const canvas = ctx.getContext('2d');
+
+        ctx.width = bodyWdith
+        ctx.height = bodyHeight
+
+        let weatherY = 100 //天气的Y轴位置
+        let randomTextY = 230 //心灵鸡汤的Y轴位置
+
+        let tag = getQueryVariable('tag') ? getQueryVariable('tag') : 'wallpapers'
+        let bgimg = getQueryVariable('bg')
+
+        //载入背景图片
+        let bg = new Promise((reslove, reject) => {
+            let bg = new Image()
+            bg.crossOrigin = 'Anonymous'
+            bg.src = `https://source.unsplash.com/${bodyWdith}x${bodyHeight}/?${tag}`
+            if (bgimg) {
+                bg.src = bgimg
+            }
+            bg.onload = function (d) {
+                reslove(bg)
+            }
+            bg.onerror = function (e) {
+                reject('背景载入错误')
+            }
+        })
+        let logo = loadImage('./images/logo.png') //logo 
+        let code = loadImage('./images/code.jpg') //二维码
+        let morning = loadImage('./images/m.png') //早安
+        let dateImg = loadImage('./images/date.png') //日期框
+        //天气
+        let weather = new Promise((reslove, reject) => {
+            axios.get('http://api.k780.com/?app=weather.today&weaid=1&appkey=56915&sign=8f9be0fbe660df908bcc697156a9aaaa&format=json&weaid=145').then(res => {
+                if (res.data === undefined || res.data.result === undefined || res.data.result.cityid === undefined) {
+                    return reject('天气获取失败')
+                }
+                let data = res.data.result
+                loadImage(data.weather_icon, true).then(Image => {
+                    data.Image = Image
+                    reslove(data)
+                }).catch(error => {
+                    return reject('天气图标下载失败')
+                })
+
+            }).catch(error => {
+                reject('天气获取失败')
+            })
+        })
+
+
+        //开始绘图
+        Promise.all([bg, logo, code, morning, dateImg,weather]).then(res => {
+            //绘制背景
+            let cx = res[0].width > bodyWdith ? (res[0].width - bodyWdith) /2 : 0;
+            let cy = res[0].height > bodyHeight ? (res[0].height - bodyHeight) /2 : 0;
+            canvas.drawImage(res[0], cx, cy, bodyWdith, bodyHeight, 0, 0, bodyWdith, bodyHeight)
+            //logo
+            canvas.drawImage(res[1], 20, 20, bodyWdith / 3, (bodyWdith / 3)/bodyWdith * res[1].height)
+            //早安
+            canvas.drawImage(res[3], bodyWdith * 0.7, 70, 100, 100)
+            //距形
+            canvas.beginPath()
+            canvas.rect(0, bodyHeight - 90, bodyWdith, 90)
+            canvas.fillStyle = "rgba(255, 255, 255, 0.6)"
+            canvas.fill()
+            canvas.closePath()
+            
+            canvas.drawImage(res[2], 10, bodyHeight - 80, 70, 70) //二维码
+            
+            fillText(canvas) //底部文字
+            
+            getWeather(weather, res[4], canvas, weatherY) //天气
+
+            drawRandomText(bodyWdith, canvas, randomTextY) //鸡汤
+            
+            document.getElementById('modal').remove() //移称模态框
+
+        }).catch(error => {
+            console.log(error)
+        })
+
+        //绘制天气方法
+        function getWeather(weather, dateImg, canvas, y) {
+            weather.then(data => {
+                //绘制日期框
+                canvas.drawImage(dateImg, 20, y, 150, 80)
+                canvas.beginPath()
+                canvas.fillStyle = "#fff"
+                canvas.font = "12px"
+                canvas.fillText(data.week, 110, y+25) //日期
+                canvas.fillText(data.days, 30, y+25) //星期
+                canvas.fill()
+                canvas.closePath()
+
+                canvas.beginPath()
+                canvas.fillStyle = '#000';
+                
+                //canvas.fillText(data.temperature_curr, 90, 120) //温度
+                canvas.fillText(data.temperature, 100, y+48) //温度
+                //canvas.fillText(data.citynm, 30, 130) //地区
+                canvas.fillText(data.wind, 100, y+65) //风向
+                canvas.fillText(data.winp, 140, y+65) //风级
+                canvas.fill()
+                canvas.closePath()
+
+                canvas.beginPath()
+                canvas.font = "16px '黑体','宋体'"; //设置字体
+                canvas.fillText(data.weather_curr, 65, y+60) //天气文字
+                canvas.fill()
+                canvas.closePath()
+                if (data.Image) {
+                    console.log('绘制天气图标')
+                    canvas.drawImage(data.Image, 30, y+45)
+                }
+            })
+        }
+
+        //底部文字
+        function fillText(canvas) {
+            canvas.beginPath()
+            canvas.fillStyle = '#000';
+            canvas.strokeStyle = '#00ff00'; //设置笔触的颜色
+            canvas.font = "bold 16px '黑体','宋体'"; //设置字体
+            canvas.fillText('鸿艺软件工作室', 100, bodyHeight - 60)
+            canvas.font = "12px '微软雅黑','宋体'"; //设置字体
+            canvas.fillText('联系电话：010-8888888', 100, bodyHeight - 40)
+            canvas.fillText('微信号：lvyac', 100, bodyHeight - 20)
+            canvas.fill()
+            canvas.closePath()
+        }
+
+        function getQueryVariable(variable) {
+            var query = window.location.search.substring(1);
+            var vars = query.split("&");
+            for (var i = 0; i < vars.length; i++) {
+                var pair = vars[i].split("=");
+                if (pair[0] == variable) { return pair[1]; }
+            }
+            return (false);
+        }
+
+        //加载图片
+        function loadImage(src, origin = false) {
+            return new Promise((reslove, reject) => {
+                let img = new Image()
+                if (origin) {
+                    bg.crossOrigin = 'Anonymous'
+                }
+                img.src = src
+                img.onload = function (d) {
+                    reslove(img)
+                }
+                img.onerror = function (e) {
+                    reject(src + '载入错误')
+                }
+            })
+        }
+
+        //返回一条随机文本
+        function randomText() {
+            let text = [
+                "生活其实也很简单",
+                "没有什么来日方长",
+                "不亏待每一份热情",
+                "每一个清晨，伴着阳光上路",
+                "人生，不辜负走过的每一份光阴",
+                "叫太阳每天把幸福的阳光洒在你身上",
+                "生活中，你无需告诉别人",
+                "在晨光中慢慢醒来",
+                "不要停止奔跑",
+                "顺生而行，无需沉迷过去",
+                "所有一尘不染的梦想都是趴在土里实现的。早安。",
+                "所有一尘不染的梦想都是趴在土里实现的。早安。",
+                "很多时候，就是在磕磕绊绊中，我们学会了生活。早安！",
+                "规划自己未来的路，一步一步向前走，不是用嘴去说，而是用心去做，早安。",
+                "尽管眼下十分艰难，可日后这段经历说不定就会开花结果。早安。",
+                "尽管日子平淡如水，依然要过得独具匠心，早安，各位。",
+                "把你的脸迎朝阳光，那就不会有阴影。早上好。",
+                "纵使黑夜吞噬了一切，还有太阳让一切重来。早安。",
+                "今日份的可爱也正常营业啦～猫宁",
+                "早上好，拥抱阳光，拥抱生活。"
+
+            ]
+            let index = Math.floor((Math.random() * text.length))
+            return text[index]
+        }
+
+        //绘制随机文本
+        function drawRandomText(screenWidth, canvas, y) {
+            let text = randomText()
+            let width = screenWidth - 40
+            console.log(canvas.measureText(text).width)
+            let height = 30,
+                top = y,
+                temp = '',
+                row = [],
+                arr = text.split('');
+
+            arr.forEach((item,index) => {
+                if(canvas.measureText(temp).width  < (width - 20)) {
+                    temp += item
+                }else {
+                    row.push(temp)
+                    temp = ''
+                    height += 20
+                }
+            })
+            row.push(temp)
+            console.log(top, width, height, temp)
+            //画距形
+            canvas.beginPath()
+            canvas.fillStyle = "rgba(255, 255, 255, 0.6)"
+            canvas.rect(20, top, width, height)
+            canvas.fill()
+            canvas.closePath()
+
+            console.log(row)
+
+            //文字
+            canvas.beginPath()
+            canvas.fillStyle = "#000"
+            row.forEach((item, index) => {
+                canvas.fillText(item, 30, top + 20*(index + 1))
+            })
+            canvas.closePath()
+        }
+
+    </script>
+</body>
+
+</html>
